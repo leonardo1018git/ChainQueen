@@ -1,13 +1,9 @@
 import torch
 
 
-def initFlowParams(xGridNums, yGridNums, density, viscosity, inletVelocities, inletPressure):
-    u = torch.zeros((xGridNums + 4, yGridNums + 4), dtype=torch.float32, device='cuda')
-    v = torch.zeros((xGridNums + 4, yGridNums + 4), dtype=torch.float32, device='cuda')
-
-    pressure = torch.zeros((xGridNums + 4, yGridNums + 4), dtype=torch.float32, device='cuda')
+def initFlowParams(xNums, yNums, density, viscosity, inletVelocities, inletPressure, device):
     tauInit = viscosity / (density * (inletVelocities[0] ** 2 + inletVelocities[1] ** 2) ** 0.5)
-    tau = torch.full((xGridNums + 4, yGridNums + 4), tauInit, dtype=torch.float32, device='cuda')
+    tau = torch.full((xNums + 4, yNums + 4), tauInit, dtype=torch.float32, device='cuda')
 
     # 流动区域
     flowRegions = torch.tensor([
@@ -20,7 +16,7 @@ def initFlowParams(xGridNums, yGridNums, density, viscosity, inletVelocities, in
         [1, 1, 1, 1, 1, 1, 1, 1, 1],
         [0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    ], dtype=torch.bool, device='cuda')
+    ], dtype=torch.bool, device=device)
 
     u = torch.where(flowRegions == True, inletVelocities[0], 0.0)
     v = torch.where(flowRegions == True, inletVelocities[1], 0.0)
