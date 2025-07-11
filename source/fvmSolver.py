@@ -2,7 +2,7 @@ import torch
 
 
 def fvmSolver(u, v, pressure, tau, xDelta, yDelta):
-    c = 1.0
+    a = 1.0
 
     uNumpy = u.cpu().numpy()
     vNumpy = v.cpu().numpy()
