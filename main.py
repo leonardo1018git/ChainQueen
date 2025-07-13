@@ -1,27 +1,28 @@
 import torch
-from source.init import initFlowParams
-from source.fvmSolver import fvmSolver
+from source.init import init_flow_params
+from source.fvm_solver import fvm_solver
 
 
 if __name__ == '__main__':
-    xLength, yLength = 1.0, 1.0
-    xNums, yNums = 5, 5
+    x_length, y_length = 1.0, 1.0
+    x_nums, y_nums = 5, 5
     density, viscosity = 1.0, 1.0
-    scheme = "Quick"
+    scheme = "QUICK"
+    # scheme = "SUD"
 
-    inletVelocities = [1.0, 0.0]
-    inletVelocity = (inletVelocities[0] ** 2 +  inletVelocities[1] ** 2) ** 0.5
-    re = density * inletVelocity * xLength / viscosity
+    inlet_velocities = [1.0, 0.0]
+    inlet_velocity = (inlet_velocities[0] ** 2 +  inlet_velocities[1] ** 2) ** 0.5
+    re = density * inlet_velocity * x_length / viscosity
 
-    xDelta, yDelta = xLength / xNums, yLength / yNums  # x轴和y轴方向的单元格长度
-    eta = xLength * re ** (-0.75)                      # Kolmogorov长度
+    delta_x, delta_y = x_length / x_nums, y_length / y_nums  # x轴和y轴方向的单元格长度
+    eta = x_length * re ** (-0.75)                      # Kolmogorov长度
 
-    if eta > xDelta and eta > yDelta:
-        innerEpochs, outerEpochs = 1000, 1000
+    if eta > delta_x and eta > delta_y:
+        inner_epochs, outer_epochs = 1000, 1000
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        inletPressure = 0.0
-        u, v, pressure, u_e, v_n, tau = initFlowParams(xNums, yNums, density, viscosity, inletVelocities, inletPressure, device)
-        u, v, pressure = fvmSolver(scheme, u, v, pressure, u_e, v_n, tau, xNums, yNums, xDelta, yDelta, density, inletVelocity, innerEpochs, outerEpochs, device)
+        inlet_pressure = 0.0
+        u, v, pressure, u_e, v_n, tau = init_flow_params(x_nums, y_nums, density, viscosity, inlet_velocities, inlet_pressure, device)
+        u, v, pressure = fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, outer_epochs, device)
     else:
         print("单元格长度小于Kolmogorov长度，不能进行DNS计算！！！")
 
