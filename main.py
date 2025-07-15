@@ -7,8 +7,22 @@ if __name__ == '__main__':
     x_length, y_length = 1.0, 1.0
     x_nums, y_nums = 5, 5
     density, viscosity = 1.0, 1.0
+    scheme_flag = 4
+    alpha = 0.2
+
     scheme = "QUICK"
-    # scheme = "SUD"
+    if scheme_flag == 0:
+        scheme = "QUICK"
+    elif scheme_flag == 1:
+        scheme = "SUD"
+    elif scheme_flag == 2:
+        scheme = "CD"
+    elif scheme_flag == 3:
+        scheme = "FUD"
+    elif scheme_flag == 4:
+        scheme = "Hybrid"
+    else:
+        print("不支持的数值格式！！！")
 
     inlet_velocities = [1.0, 0.0]
     inlet_velocity = (inlet_velocities[0] ** 2 +  inlet_velocities[1] ** 2) ** 0.5
@@ -22,7 +36,7 @@ if __name__ == '__main__':
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         inlet_pressure = 0.0
         u, v, pressure, u_e, v_n, tau = init_flow_params(x_nums, y_nums, density, viscosity, inlet_velocities, inlet_pressure, device)
-        u, v, pressure = fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, outer_epochs, device)
+        u, v, pressure = fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, alpha, inner_epochs, outer_epochs, device)
     else:
         print("单元格长度小于Kolmogorov长度，不能进行DNS计算！！！")
 

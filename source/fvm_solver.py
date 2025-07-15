@@ -1,6 +1,10 @@
 import torch
 from source.scheme.quick_scheme import quick
 from source.scheme.sud_scheme import second_upwind_difference_scheme
+from source.scheme.cd_scheme import central_difference_scheme
+from source.scheme.fud_scheme import first_upwind_difference_scheme
+from source.scheme.hybrid_scheme import hybrid_scheme
+from source.interface_velocity import update_interface_velocities
 
 
 def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs):
@@ -30,6 +34,15 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta
     elif scheme == "SUD":
         # 二阶迎风格式
         a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p = second_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    elif scheme == "CD":
+        # 中心差分格式
+        a_w, a_e, a_s, a_n, a_p = central_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    elif scheme == "FUD":
+        # 一阶迎风格式
+        a_w, a_e, a_s, a_n, a_p = first_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    elif scheme == "Hybrid":
+        # 一阶迎风格式
+        a_w, a_e, a_s, a_n, a_p = hybrid_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
 
     for epoch in range(inner_epochs):
         u_old, v_old = u.clone(), v.clone()
@@ -59,27 +72,28 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta
     d_n_numpy = d_n.cpu().numpy()
     d_s_numpy = d_s.cpu().numpy()
 
-    a_ww_numpy = a_ww.cpu().numpy()
-    a_w_numpy = a_w.cpu().numpy()
+    # a_ee_numpy = a_ee.cpu().numpy()
+    # a_ww_numpy = a_ww.cpu().numpy()
+    # a_nn_numpy = a_nn.cpu().numpy()
+    # a_ss_numpy = a_ss.cpu().numpy()
+
     a_e_numpy = a_e.cpu().numpy()
-    a_ee_numpy = a_ee.cpu().numpy()
-    a_ss_numpy = a_ss.cpu().numpy()
-    a_s_numpy = a_s.cpu().numpy()
+    a_w_numpy = a_w.cpu().numpy()
     a_n_numpy = a_n.cpu().numpy()
-    a_nn_numpy = a_nn.cpu().numpy()
+    a_s_numpy = a_s.cpu().numpy()
     a_p_numpy = a_p.cpu().numpy()
 
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
 
-    a = 1
-
-    return u, v
+    return u, v, a_p
 
 
-def fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity,inner_epochs, outer_epochs, device):
+def fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, alpha,inner_epochs, outer_epochs, device):
 
-    u, v = velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs)
+    for epoch in range(outer_epochs):
+        u, v, a_p = velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs)
+        u_e, v_n = update_interface_velocities(u, v, pressure, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, alpha)
 
 
 
