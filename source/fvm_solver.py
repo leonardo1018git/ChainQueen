@@ -89,6 +89,11 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta
     return u, v, a_p
 
 
+def pressure_solver():
+
+    return pressure
+
+
 def fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, alpha,inner_epochs, outer_epochs, device):
 
     for epoch in range(outer_epochs):
