@@ -7,8 +7,8 @@ from source.scheme.hybrid_scheme import hybrid_scheme
 from source.interface_velocity import update_interface_velocities
 
 
-def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs):
-    a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, device):
+    a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     y_division_x = delta_y / (2.0 * delta_x)
     x_division_y = delta_x / (2.0 * delta_y)
 
@@ -30,19 +30,25 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta
 
     if scheme == "QUICK":
         # Quick格式
-        a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p = quick(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p[2: x_nums + 2, 2: y_nums + 2] = quick(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "SUD":
         # 二阶迎风格式
-        a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p = second_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p[2: x_nums + 2, 2: y_nums + 2] = second_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "CD":
         # 中心差分格式
-        a_w, a_e, a_s, a_n, a_p = central_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_w, a_e, a_s, a_n, a_p[2: x_nums + 2, 2: y_nums + 2] = central_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "FUD":
         # 一阶迎风格式
-        a_w, a_e, a_s, a_n, a_p = first_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_w, a_e, a_s, a_n, a_p[2: x_nums + 2, 2: y_nums + 2] = first_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "Hybrid":
         # 一阶迎风格式
-        a_w, a_e, a_s, a_n, a_p = hybrid_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_w, a_e, a_s, a_n, a_p[2: x_nums + 2, 2: y_nums + 2] = hybrid_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+
+    a_p[:, 0], a_p[:, 1] = a_p[:, 2], a_p[:, 2]
+    a_p[:, -1], a_p[:, -2] = a_p[:, -3], a_p[:, -3]
+
+    a_p[0, :], a_p[1, :] = a_p[2, :], a_p[2, :]
+    a_p[-1, :], a_p[-2, :] = a_p[-3, :], a_p[-3, :]
 
     for epoch in range(inner_epochs):
         u_old, v_old = u.clone(), v.clone()
@@ -50,12 +56,12 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta
                                          + a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
                                          + a_ss * u[2: x_nums + 2, : y_nums] + a_s * u[2: x_nums + 2, 1: y_nums + 1]
                                          + a_n * u[2: x_nums + 2, 3: y_nums + 3] + a_nn * u[2: x_nums + 2, 4: y_nums + 4]
-                                         + u_source) / a_p
+                                         + u_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
         v[2: x_nums + 2, 2: y_nums + 2] = (a_ww * v[: x_nums, 2: y_nums + 2] + a_w * v[1: x_nums + 1, 2: y_nums + 2]
                                          + a_e * v[3: x_nums + 3, 2: y_nums + 2] + a_ee * v[4: x_nums + 4, 2: y_nums + 2]
                                          + a_ss * v[2: x_nums + 2, : y_nums] + a_s * v[2: x_nums + 2, 1: y_nums + 1]
                                          + a_n * v[2: x_nums + 2, 3: y_nums + 3] + a_nn * v[2: x_nums + 2, 4: y_nums + 4]
-                                         + v_source) / a_p
+                                         + v_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
 
         u[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, u[2: x_nums + 2, 2: y_nums + 2], 0.0)
         v[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, v[2: x_nums + 2, 2: y_nums + 2], 0.0)
@@ -66,6 +72,14 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta
         print("epoch = " + str(epoch) + ", uError = " + str(u_error.cpu().numpy()) + ", vError = " + str(v_error.cpu().numpy()))
         if u_error.cpu().numpy() < 1.0e-6 and v_error.cpu().numpy() < 1.0e-6:
             break
+
+    u[:, -1], u[:, -2] = u[:, -3],u[:, -3]
+    u[0, :], u[1, :] = u[2, :], u[2, :]
+    u[-1, :], u[-2, :] = u[-3, :], u[-3, :]
+
+    v[:, -1], v[:, -2] = v[:, -3], v[:, -3]
+    v[0, :], v[1, :] = v[2, :], v[2, :]
+    v[-1, :], v[-2, :] = v[-3, :], v[-3, :]
 
     d_e_numpy = d_e.cpu().numpy()
     d_w_numpy = d_w.cpu().numpy()
@@ -89,17 +103,18 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta
     return u, v, a_p
 
 
-def pressure_solver():
+def pressure_solver(pressure, u_e, v_n, pressure_prime, a_p, delta_x, delta_y):
+    a_pe = delta_y ** 2 / a_p
 
     return pressure
 
 
-def fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, alpha,inner_epochs, outer_epochs, device):
+def fvm_solver(scheme, u, v, pressure, pressure_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, alpha,inner_epochs, outer_epochs, device):
 
     for epoch in range(outer_epochs):
-        u, v, a_p = velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs)
+        u, v, a_p = velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, device)
         u_e, v_n = update_interface_velocities(u, v, pressure, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, alpha)
-
+        pressure = pressure_solver(pressure, u_e, v_n, pressure_prime, a_p, delta_x, delta_y)
 
 
     u_numpy = u.cpu().numpy()
