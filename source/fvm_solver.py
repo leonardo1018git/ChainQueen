@@ -140,12 +140,15 @@ def pressure_solver(pressure, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta
     return p_prime
 
 
-def correct_params(u, v, u_e, v_n, p_prime, a_p, x_nums, y_nums, delta_x, delta_y, alpha, density, inlet_velocity):
-    # u[2: x_nums + 2, 2: y_nums + 2] += 0.5 * alpha * (p_prime[1: x_nums + 1, 2: y_nums + 2] - p_prime[3: x_nums + 3, 2: y_nums + 2]) * delta_y / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2])
-    # v[2: x_nums + 2, 2: y_nums + 2] += 0.5 * alpha * (p_prime[2: x_nums + 2, 1: y_nums + 1] - p_prime[2: x_nums + 2, 3: y_nums + 3]) * delta_x / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2])
-    #
-    # u_e += 0.5 * alpha * (1.0 / a_p[1: x_nums + 2, 2: y_nums + 2] + 1.0 / a_p[2: x_nums + 3, 2: y_nums + 2]) * (p_prime[1: x_nums + 2, 2: y_nums + 2] - p_prime[2: x_nums + 3, 2: y_nums + 2]) * delta_y / (density * inlet_velocity ** 2)
-    # v_n += 0.5 * alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3]) * (p_prime[2: x_nums + 2, 1: y_nums + 2] - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta_x / (density * inlet_velocity ** 2)
+def correct_params(u, v, u_e, v_n, p_prime, tau, a_p, x_nums, y_nums, delta_x, delta_y, alpha, density, inlet_velocity):
+    u[2: x_nums + 2, 2: y_nums + 2] += 0.5 * alpha * (p_prime[1: x_nums + 1, 2: y_nums + 2] - p_prime[3: x_nums + 3, 2: y_nums + 2]) * delta_y / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2])
+    v[2: x_nums + 2, 2: y_nums + 2] += 0.5 * alpha * (p_prime[2: x_nums + 2, 1: y_nums + 1] - p_prime[2: x_nums + 2, 3: y_nums + 3]) * delta_x / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2])
+
+    u[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, u[2: x_nums + 2, 2: y_nums + 2], 0.0)
+    v[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, v[2: x_nums + 2, 2: y_nums + 2], 0.0)
+
+    u_e += 0.5 * alpha * (1.0 / a_p[1: x_nums + 2, 2: y_nums + 2] + 1.0 / a_p[2: x_nums + 3, 2: y_nums + 2]) * (p_prime[1: x_nums + 2, 2: y_nums + 2] - p_prime[2: x_nums + 3, 2: y_nums + 2]) * delta_y / (density * inlet_velocity ** 2)
+    v_n += 0.5 * alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3]) * (p_prime[2: x_nums + 2, 1: y_nums + 2] - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta_x / (density * inlet_velocity ** 2)
 
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
@@ -162,7 +165,7 @@ def fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, a_p, x_nums, y_nums, delta
         u, v, a_p = velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs)
         u_e, v_n = update_interface_velocities(u, v, pressure, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity)
         p_prime = pressure_solver(pressure, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inlet_pressure, inner_epochs)
-        u, v, u_e, v_n = correct_params(u, v, u_e, v_n, p_prime, a_p, x_nums, y_nums, delta_x, delta_y, alpha, density, inlet_velocity)
+        u, v, u_e, v_n = correct_params(u, v, u_e, v_n, p_prime, tau, a_p, x_nums, y_nums, delta_x, delta_y, alpha, density, inlet_velocity)
 
 
     u_numpy = u.cpu().numpy()
