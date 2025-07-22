@@ -12,15 +12,24 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, a_p, x_nums, y_nums, 
     y_division_x = delta_y / (2.0 * delta_x)
     x_division_y = delta_x / (2.0 * delta_y)
 
+    tau_numpy = tau.cpu().numpy()
+
     d_e = (tau[3: x_nums + 3, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2]) * y_division_x
     d_w = (tau[1: x_nums + 1, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2]) * y_division_x
     d_n = (tau[2: x_nums + 2, 3: y_nums + 3] + tau[2: x_nums + 2, 2: y_nums + 2]) * x_division_y
     d_s = (tau[2: x_nums + 2, 1: y_nums + 1] + tau[2: x_nums + 2, 2: y_nums + 2]) * x_division_y
 
+    d_e_numpy = d_e.cpu().numpy()
+    d_w_numpy = d_w.cpu().numpy()
+    d_n_numpy = d_n.cpu().numpy()
+    d_s_numpy = d_s.cpu().numpy()
+
     # f_e = u_e[1: x_nums + 1, :] * y_delta
     # f_w = u_e[: x_nums, :] * y_delta
     # f_n = v_n[:, 1: y_nums + 1] * x_delta
     # f_s = v_n[:, : y_nums] * x_delta
+
+    pressure_numpy = pressure.cpu().numpy()
 
     u_source = (pressure[3: x_nums + 3, 2: y_nums + 2] - pressure[1: x_nums + 1, 2: y_nums + 2]) * delta_y / (2.0 * density * inlet_velocity ** 2)
     v_source = (pressure[2: x_nums + 2, 3: y_nums + 3] - pressure[2: x_nums + 2, 1: y_nums + 1]) * delta_x / (2.0 * density * inlet_velocity ** 2)
@@ -50,17 +59,26 @@ def velocity_solver(scheme, u, v, pressure, u_e, v_n, tau, a_p, x_nums, y_nums, 
     a_p[0, :], a_p[1, :] = a_p[2, :], a_p[2, :]
     a_p[-1, :], a_p[-2, :] = a_p[-3, :], a_p[-3, :]
 
+    a_e_numpy = a_e.cpu().numpy()
+    a_w_numpy = a_w.cpu().numpy()
+    a_n_numpy = a_n.cpu().numpy()
+    a_s_numpy = a_s.cpu().numpy()
+    a_p_numpy = a_p.cpu().numpy()
+
+    u_numpy = u.cpu().numpy()
+    v_numpy = v.cpu().numpy()
+
     for epoch in range(inner_epochs):
         u_old, v_old = u.clone(), v.clone()
-        u[2: x_nums + 2, 2: y_nums + 2] = (a_ww * u[: x_nums, 2: y_nums + 2] + a_w * u[1: x_nums + 1, 2: y_nums + 2]
-                                         + a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
-                                         + a_ss * u[2: x_nums + 2, : y_nums] + a_s * u[2: x_nums + 2, 1: y_nums + 1]
+        u[2: x_nums + 2, 2: y_nums + 2] = (a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
+                                         + a_w * u[1: x_nums + 1, 2: y_nums + 2] + a_ww * u[: x_nums, 2: y_nums + 2]
                                          + a_n * u[2: x_nums + 2, 3: y_nums + 3] + a_nn * u[2: x_nums + 2, 4: y_nums + 4]
+                                         + a_s * u[2: x_nums + 2, 1: y_nums + 1] + a_ss * u[2: x_nums + 2, : y_nums]
                                          + u_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
-        v[2: x_nums + 2, 2: y_nums + 2] = (a_ww * v[: x_nums, 2: y_nums + 2] + a_w * v[1: x_nums + 1, 2: y_nums + 2]
-                                         + a_e * v[3: x_nums + 3, 2: y_nums + 2] + a_ee * v[4: x_nums + 4, 2: y_nums + 2]
-                                         + a_ss * v[2: x_nums + 2, : y_nums] + a_s * v[2: x_nums + 2, 1: y_nums + 1]
+        v[2: x_nums + 2, 2: y_nums + 2] = (a_e * v[3: x_nums + 3, 2: y_nums + 2] + a_ee * v[4: x_nums + 4, 2: y_nums + 2]
+                                         + a_w * v[1: x_nums + 1, 2: y_nums + 2] + a_ww * v[: x_nums, 2: y_nums + 2]
                                          + a_n * v[2: x_nums + 2, 3: y_nums + 3] + a_nn * v[2: x_nums + 2, 4: y_nums + 4]
+                                         + a_s * v[2: x_nums + 2, 1: y_nums + 1] + a_ss * v[2: x_nums + 2, : y_nums]
                                          + v_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
 
         u[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, u[2: x_nums + 2, 2: y_nums + 2], 0.0)

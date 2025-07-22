@@ -7,22 +7,9 @@ if __name__ == '__main__':
     x_length, y_length = 1.0, 1.0
     x_nums, y_nums = 5, 5
     density, viscosity = 1.0, 1.0
-    scheme_flag = 1
+    scheme_dict = {0: "QUICK", 1: "SUD", 2: "CD", 3: "FUD", 4: "Hybrid"}
+    scheme = scheme_dict[2]
     alpha = 0.2
-
-    scheme = None
-    if scheme_flag == 0:
-        scheme = "QUICK"
-    elif scheme_flag == 1:
-        scheme = "SUD"
-    elif scheme_flag == 2:
-        scheme = "CD"
-    elif scheme_flag == 3:
-        scheme = "FUD"
-    elif scheme_flag == 4:
-        scheme = "Hybrid"
-    else:
-        print("不支持的数值格式！！！")
 
     inlet_velocities = [1.0, 1.0]
     inlet_velocity = (inlet_velocities[0] ** 2 +  inlet_velocities[1] ** 2) ** 0.5
@@ -34,7 +21,7 @@ if __name__ == '__main__':
     if eta > delta_x and eta > delta_y:
         inner_epochs, outer_epochs = 1000, 1000
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        inlet_pressure = 1.0
+        inlet_pressure = 0.5
         u, v, pressure, u_e, v_n, tau, a_p = init_flow_params(x_nums, y_nums, density, viscosity, inlet_velocities, inlet_pressure, device)
         u, v, pressure = fvm_solver(scheme, u, v, pressure, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inlet_pressure, inner_epochs, outer_epochs, alpha)
     else:
