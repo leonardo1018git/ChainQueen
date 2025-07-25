@@ -8,7 +8,7 @@ if __name__ == '__main__':
     x_nums, y_nums = 5, 5
     density, viscosity = 1.0, 1.0
     scheme_dict = {0: "QUICK", 1: "SUD", 2: "CD", 3: "FUD", 4: "Hybrid"}
-    scheme = scheme_dict[2]
+    scheme = scheme_dict[0]
     alpha = 0.001
 
     inlet_velocities = [1.0, 1.0]

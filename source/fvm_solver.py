@@ -74,19 +74,19 @@ def velocity_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, d
 
     for epoch in range(inner_epochs):
         u_old, v_old = u.clone(), v.clone()
-        ae_ue = a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
-        aw_uw = a_w * u[1: x_nums + 1, 2: y_nums + 2] + a_ww * u[: x_nums, 2: y_nums + 2]
-        an_un = a_n * u[2: x_nums + 2, 3: y_nums + 3] + a_nn * u[2: x_nums + 2, 4: y_nums + 4]
-        as_us = a_s * u[2: x_nums + 2, 1: y_nums + 1] + a_ss * u[2: x_nums + 2, : y_nums]
-
-        ae_ue_numpy = ae_ue.cpu().numpy()
-        aw_uw_numpy = aw_uw.cpu().numpy()
-        an_un_numpy = an_un.cpu().numpy()
-        as_us_numpy = as_us.cpu().numpy()
-
-        sum_an = ae_ue_numpy + aw_uw_numpy + an_un_numpy + as_us_numpy
-        an_un = sum_an + u_source_numpy
-        an_vn = sum_an + v_source_numpy
+        # ae_ue = a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
+        # aw_uw = a_w * u[1: x_nums + 1, 2: y_nums + 2] + a_ww * u[: x_nums, 2: y_nums + 2]
+        # an_un = a_n * u[2: x_nums + 2, 3: y_nums + 3] + a_nn * u[2: x_nums + 2, 4: y_nums + 4]
+        # as_us = a_s * u[2: x_nums + 2, 1: y_nums + 1] + a_ss * u[2: x_nums + 2, : y_nums]
+        #
+        # ae_ue_numpy = ae_ue.cpu().numpy()
+        # aw_uw_numpy = aw_uw.cpu().numpy()
+        # an_un_numpy = an_un.cpu().numpy()
+        # as_us_numpy = as_us.cpu().numpy()
+        #
+        # sum_an = ae_ue_numpy + aw_uw_numpy + an_un_numpy + as_us_numpy
+        # an_un = sum_an + u_source_numpy
+        # an_vn = sum_an + v_source_numpy
 
         u[2: x_nums + 2, 2: y_nums + 2] = (a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
                                          + a_w * u[1: x_nums + 1, 2: y_nums + 2] + a_ww * u[: x_nums, 2: y_nums + 2]
@@ -185,8 +185,12 @@ def correct_params(u, v, u_e, v_n, p_prime, tau, a_p, x_nums, y_nums, delta_x, d
     u[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, u[2: x_nums + 2, 2: y_nums + 2], 0.0)
     v[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, v[2: x_nums + 2, 2: y_nums + 2], 0.0)
 
-    u_e += 0.5 * alpha * (1.0 / a_p[1: x_nums + 2, 2: y_nums + 2] + 1.0 / a_p[2: x_nums + 3, 2: y_nums + 2]) * (p_prime[1: x_nums + 2, 2: y_nums + 2] - p_prime[2: x_nums + 3, 2: y_nums + 2]) * delta_y / (density * inlet_velocity ** 2)
-    v_n += 0.5 * alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3]) * (p_prime[2: x_nums + 2, 1: y_nums + 2] - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta_x / (density * inlet_velocity ** 2)
+    u_e += (0.5 * alpha * (1.0 / a_p[1: x_nums + 2, 2: y_nums + 2] + 1.0 / a_p[2: x_nums + 3, 2: y_nums + 2])
+            * (p_prime[1: x_nums + 2, 2: y_nums + 2] - p_prime[2: x_nums + 3, 2: y_nums + 2]) * delta_y
+            / (density * inlet_velocity ** 2))
+    v_n += (0.5 * alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3])
+            * (p_prime[2: x_nums + 2, 1: y_nums + 2] - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta_x
+            / (density * inlet_velocity ** 2))
 
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
@@ -197,7 +201,7 @@ def correct_params(u, v, u_e, v_n, p_prime, tau, a_p, x_nums, y_nums, delta_x, d
 
 
 def fvm_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, outer_epochs, alpha):
-
+    u_error_old, v_error_old, p_error_old = 0.0, 0.0, 0.0
     for epoch in range(outer_epochs):
         u_old, v_old, p_old = u.clone(), v.clone(), p_prime.clone()
         u, v, a_p = velocity_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs)
@@ -213,10 +217,19 @@ def fvm_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_
         u_numpy, v_numpy = u.cpu().numpy(), v.cpu().numpy()
         u_e_numpy, v_n_numpy = u_e.cpu().numpy(), v_n.cpu().numpy()
 
-        u_error, v_error, p_error = torch.max(torch.abs(u_old - u) * 100 / inlet_velocity), torch.max(torch.abs(v_old - v) * 100 / inlet_velocity), torch.max(torch.abs(p_old - p_prime))
-        print("epoch = " + str(epoch) + ", uError = " + str(u_error.cpu().numpy()) + ", vError = " + str(v_error.cpu().numpy()) + ", pError = " + str(p_error.cpu().numpy()))
-        if u_error.cpu().numpy() < 1.0e-6 and v_error.cpu().numpy() < 1.0e-6:
+        u_error = (torch.max(torch.abs(u_old - u) * 100 / inlet_velocity).cpu().numpy()).item()
+        v_error = (torch.max(torch.abs(v_old - v) * 100 / inlet_velocity).cpu().numpy()).item()
+        p_error = (torch.max(torch.abs(p_old - p_prime)).cpu().numpy()).item()
+        print("epoch = " + str(epoch) + ", uError = " + str(u_error) + ", vError = " + str(v_error) + ", pError = " + str(p_error))
+        if u_error < 1.0e-6 and v_error < 1.0e-6 and p_error < 1.0e-6:
             break
+
+        u_error_error = abs(u_error_old - u_error) * 100 / max(u_error, 1.0e-30)
+        v_error_error = abs(v_error_old - v_error) * 100 / max(v_error, 1.0e-30)
+        p_error_error = abs(p_error_old - p_error) * 100 / max(p_error, 1.0e-30)
+        if u_error_error < 1.0e-6 and v_error_error < 1.0e-6 and p_error_error < 1.0e-6:
+            break
+        u_error_old, v_error_old, v_error_old = u_error, v_error, p_error
 
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()

@@ -18,14 +18,11 @@ def init_flow_params(x_nums, y_nums, density, viscosity, inlet_velocities, devic
     u = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), inlet_velocities[0], 0.0)
     v = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), inlet_velocities[1], 0.0)
 
-    inlet_pressure = 0.5
-    p_prime = torch.where(flow_regions == 1, inlet_pressure, 0.0)                                              # 压力修正值
-
+    p_prime = torch.zeros_like(flow_regions, dtype=torch.float32, device=device)                                              # 压力修正值
     u_e = torch.zeros((x_nums + 1, y_nums), dtype=torch.float32, device=device)
     v_n = torch.zeros((x_nums, y_nums + 1), dtype=torch.float32, device=device)
 
     tau_init = viscosity / (density * (inlet_velocities[0] ** 2 + inlet_velocities[1] ** 2) ** 0.5)
-    tau_init = 0.5
     tau = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), tau_init, 1.0e30)
 
     a_p = torch.zeros_like(u, dtype=torch.float32, device=device)
