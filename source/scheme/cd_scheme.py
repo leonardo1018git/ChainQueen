@@ -1,26 +1,31 @@
 import torch
 
 
-def central_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y):
-    # f_e = (u_e[1: x_nums + 1, :] * delta_y)
-    # f_w = (u_e[: x_nums, :] * delta_y)
-    # f_n = (v_n[:, 1: y_nums + 1] * delta_x)
-    # f_s = (v_n[:, : y_nums] * delta_x)
+def central_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y):
+    # f_e = u_e[2: x_nums + 2, 2: y_nums + 2] * delta_y
+    # f_w = u_e[1: x_nums + 1, 2: y_nums + 2] * delta_y
+    # f_n = v_n[2: x_nums + 2, 2: y_nums + 2] * delta_x
+    # f_s = v_n[2: x_nums + 2, 1: y_nums + 1] * delta_x
 
-    d_e_numpy = d_e.cpu().numpy()
-    d_w_numpy = d_w.cpu().numpy()
-    d_n_numpy = d_n.cpu().numpy()
-    d_s_numpy = d_s.cpu().numpy()
+    a_e = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0)
+                      | flow_regions[3: x_nums + 3, 2: y_nums + 2].eq(0), 1.0e-30,
+                      d_e - 0.5 * u_e[2: x_nums + 2, 2: y_nums + 2] * delta_y)
 
-    u_e_numpy = u_e.cpu().numpy()
-    v_n_numpy = v_n.cpu().numpy()
+    a_w = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0)
+                      | flow_regions[1: x_nums + 1, 2: y_nums + 2].eq(0), 1.0e-30,
+                      d_w + 0.5 * u_e[1: x_nums + 1, 2: y_nums + 2] * delta_y)
 
-    a_w = d_w + 0.5 * (u_e[: x_nums, :] * delta_y)
-    a_e = d_e - 0.5 * (u_e[1: x_nums + 1, :] * delta_y)
-    a_s = d_s + 0.5 * (v_n[:, : y_nums] * delta_x)
-    a_n = d_n - 0.5 * (v_n[:, 1: y_nums + 1] * delta_x)
+    a_n = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0)
+                      | flow_regions[2: x_nums + 2, 3: y_nums + 3].eq(0), 1.0e-30,
+                      d_n - 0.5 * v_n[2: x_nums + 2, 2: y_nums + 2] * delta_x)
 
-    a_p = a_w + a_e + a_s + a_n + (u_e[1: x_nums + 1, :] - u_e[: x_nums, :]) * delta_y + (v_n[:, 1: y_nums + 1] - v_n[:, : y_nums]) * delta_x
+    a_s = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0)
+                      | flow_regions[2: x_nums + 2, 1: y_nums + 1].eq(0), 1.0e-30,
+                      d_s + 0.5 * v_n[2: x_nums + 2, 1: y_nums + 1] * delta_x)
+
+    a_p[2: x_nums + 2, 2: y_nums + 2] = (a_e + a_w + a_n + a_s
+                                         + (u_e[2: x_nums + 2, 2: y_nums + 2] - u_e[1: x_nums + 1, 2: y_nums + 2]) * delta_y
+                                         + (v_n[2: x_nums + 2, 2: y_nums + 2] - v_n[2: x_nums + 2, 1: y_nums + 1]) * delta_x)
 
     a_e_numpy = a_e.cpu().numpy()
     a_w_numpy = a_w.cpu().numpy()
@@ -28,4 +33,4 @@ def central_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delt
     a_s_numpy = a_s.cpu().numpy()
     a_p_numpy = a_p.cpu().numpy()
 
-    return a_w, a_e, a_s, a_n, a_p
+    return a_p, a_e, a_w, a_n, a_s

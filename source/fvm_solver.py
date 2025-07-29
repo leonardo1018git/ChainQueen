@@ -1,67 +1,78 @@
 import torch
 from source.scheme.quick_scheme import quick
-from source.scheme.sud_scheme import second_upwind_difference_scheme
-from source.scheme.cd_scheme import central_difference_scheme
-from source.scheme.fud_scheme import first_upwind_difference_scheme
-from source.scheme.hybrid_scheme import hybrid_scheme
-from source.interface_velocity import update_interface_velocities
+from source.scheme.sud_scheme import second_upwind_difference
+from source.scheme.cd_scheme import central_difference
+from source.scheme.fud_scheme import first_upwind_difference
+from source.scheme.hybrid_scheme import hybrid
+from source.decoupled.simple import simple_solver
+from source.decoupled.simplec import simple_c_solver
 
 
-def velocity_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs):
+# 传热与流体流动的数值计算228页，4.5小节稳态问题同位网格的SIMPLE算法
+def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha):
     a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     y_division_x = delta_y / (2.0 * delta_x)
     x_division_y = delta_x / (2.0 * delta_y)
 
-    tau_numpy = tau.cpu().numpy()
-    tau_e_numpy = (tau[3: x_nums + 3, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2]).cpu().numpy()
-    tau_w_numpy = (tau[1: x_nums + 1, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2]).cpu().numpy()
-    tau_n_numpy = (tau[2: x_nums + 2, 3: y_nums + 3] + tau[2: x_nums + 2, 2: y_nums + 2]).cpu().numpy()
-    tau_s_numpy = (tau[2: x_nums + 2, 1: y_nums + 1] + tau[2: x_nums + 2, 2: y_nums + 2]).cpu().numpy()
+    # tau_numpy = tau.cpu().numpy()
+    # tau_e_numpy = (2 * tau[3: x_nums + 3, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[3: x_nums + 3, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
+    # tau_w_numpy = (2 * tau[1: x_nums + 1, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[1: x_nums + 1, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
+    # tau_n_numpy = (2 * tau[2: x_nums + 2, 3: y_nums + 3] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 3: y_nums + 3] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
+    # tau_s_numpy = (2 * tau[2: x_nums + 2, 1: y_nums + 1] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 1: y_nums + 1] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
 
-    d_e = (tau[3: x_nums + 3, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2]) * y_division_x
-    d_w = (tau[1: x_nums + 1, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2]) * y_division_x
-    d_n = (tau[2: x_nums + 2, 3: y_nums + 3] + tau[2: x_nums + 2, 2: y_nums + 2]) * x_division_y
-    d_s = (tau[2: x_nums + 2, 1: y_nums + 1] + tau[2: x_nums + 2, 2: y_nums + 2]) * x_division_y
+    d_e = (2 * tau[3: x_nums + 3, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[3: x_nums + 3, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])) * y_division_x
+    d_w = (2 * tau[1: x_nums + 1, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[1: x_nums + 1, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])) * y_division_x
+    d_n = (2 * tau[2: x_nums + 2, 3: y_nums + 3] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 3: y_nums + 3] + tau[2: x_nums + 2, 2: y_nums + 2])) * x_division_y
+    d_s = (2 * tau[2: x_nums + 2, 1: y_nums + 1] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 1: y_nums + 1] + tau[2: x_nums + 2, 2: y_nums + 2])) * x_division_y
 
     d_e_numpy = d_e.cpu().numpy()
     d_w_numpy = d_w.cpu().numpy()
     d_n_numpy = d_n.cpu().numpy()
     d_s_numpy = d_s.cpu().numpy()
 
-    # f_e = u_e[1: x_nums + 1, :] * y_delta
-    # f_w = u_e[: x_nums, :] * y_delta
-    # f_n = v_n[:, 1: y_nums + 1] * x_delta
-    # f_s = v_n[:, : y_nums] * x_delta
+    # f_e = u_e[2: x_nums + 2, 2: y_nums + 2] * delta_y
+    # f_w = u_e[1: x_nums + 1, 2: y_nums + 2] * delta_y
+    # f_n = v_n[2: x_nums + 2, 2: y_nums + 2] * delta_x
+    # f_s = v_n[2: x_nums + 2, 1: y_nums + 1] * delta_x
 
-    p_prime_numpy = p_prime.cpu().numpy()
+    p_numpy = p.cpu().numpy()
 
-    u_source = (p_prime[3: x_nums + 3, 2: y_nums + 2] - p_prime[1: x_nums + 1, 2: y_nums + 2]) * delta_y / (2.0 * density * inlet_velocity ** 2)
-    v_source = (p_prime[2: x_nums + 2, 3: y_nums + 3] - p_prime[2: x_nums + 2, 1: y_nums + 1]) * delta_x / (2.0 * density * inlet_velocity ** 2)
+    u_source = (p[1: x_nums + 1, 2: y_nums + 2] - p[3: x_nums + 3, 2: y_nums + 2]) * delta_y / (2.0 * density * inlet_velocity ** 2)
+    v_source = (p[2: x_nums + 2, 1: y_nums + 1] - p[2: x_nums + 2, 3: y_nums + 3]) * delta_x / (2.0 * density * inlet_velocity ** 2)
 
     u_source_numpy = u_source.cpu().numpy()
     v_source_numpy = v_source.cpu().numpy()
 
+    # a_p_quick, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = quick(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    # a_p_sud, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = second_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    # a_p_cd, a_e, a_w, a_n, a_s = central_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    # a_p_fud, a_e, a_w, a_n, a_s = first_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    # a_p_hyb, a_e, a_w, a_n, a_s = hybrid(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+    #
+    # a_p_quick_numpy = a_p_quick.cpu().numpy()
+    # a_p_sud_numpy = a_p_sud.cpu().numpy()
+    # a_p_cd_numpy = a_p_cd.cpu().numpy()
+    # a_p_fud_numpy = a_p_fud.cpu().numpy()
+    # a_p_hyb_numpy = a_p_hyb.cpu().numpy()
+
     if scheme == "QUICK":
         # Quick格式
-        a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p[2: x_nums + 2, 2: y_nums + 2] = quick(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = quick(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "SUD":
         # 二阶迎风格式
-        a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn, a_p[2: x_nums + 2, 2: y_nums + 2] = second_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = second_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "CD":
         # 中心差分格式
-        a_w, a_e, a_s, a_n, a_p[2: x_nums + 2, 2: y_nums + 2] = central_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_w, a_n, a_s = central_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "FUD":
         # 一阶迎风格式
-        a_w, a_e, a_s, a_n, a_p[2: x_nums + 2, 2: y_nums + 2] = first_upwind_difference_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_w, a_n, a_s = first_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
     elif scheme == "Hybrid":
-        # 一阶迎风格式
-        a_w, a_e, a_s, a_n, a_p[2: x_nums + 2, 2: y_nums + 2] = hybrid_scheme(u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        # 混合格式
+        a_p, a_e, a_w, a_n, a_s = hybrid(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
 
-    a_p[:, 0], a_p[:, 1] = a_p[:, 2], a_p[:, 2]
-    a_p[:, -1], a_p[:, -2] = a_p[:, -3], a_p[:, -3]
-
-    a_p[0, :], a_p[1, :] = a_p[2, :], a_p[2, :]
-    a_p[-1, :], a_p[-2, :] = a_p[-3, :], a_p[-3, :]
+    a_p[2: x_nums + 2, -1], a_p[2: x_nums + 2, -2] = a_p[2: x_nums + 2, -3], a_p[2: x_nums + 2, -3]
+    a_p[2: x_nums + 2, 0], a_p[2: x_nums + 2, 1] = a_p[2: x_nums + 2, 2], a_p[2: x_nums + 2, 2]
 
     a_e_numpy = a_e.cpu().numpy()
     a_w_numpy = a_w.cpu().numpy()
@@ -72,6 +83,7 @@ def velocity_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, d
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
 
+    u_error_old, v_error_old = 0.0, 0.0
     for epoch in range(inner_epochs):
         u_old, v_old = u.clone(), v.clone()
         # ae_ue = a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
@@ -88,26 +100,36 @@ def velocity_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, d
         # an_un = sum_an + u_source_numpy
         # an_vn = sum_an + v_source_numpy
 
-        u[2: x_nums + 2, 2: y_nums + 2] = (a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
-                                         + a_w * u[1: x_nums + 1, 2: y_nums + 2] + a_ww * u[: x_nums, 2: y_nums + 2]
-                                         + a_n * u[2: x_nums + 2, 3: y_nums + 3] + a_nn * u[2: x_nums + 2, 4: y_nums + 4]
-                                         + a_s * u[2: x_nums + 2, 1: y_nums + 1] + a_ss * u[2: x_nums + 2, : y_nums]
-                                         - u_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
-        v[2: x_nums + 2, 2: y_nums + 2] = (a_e * v[3: x_nums + 3, 2: y_nums + 2] + a_ee * v[4: x_nums + 4, 2: y_nums + 2]
-                                         + a_w * v[1: x_nums + 1, 2: y_nums + 2] + a_ww * v[: x_nums, 2: y_nums + 2]
-                                         + a_n * v[2: x_nums + 2, 3: y_nums + 3] + a_nn * v[2: x_nums + 2, 4: y_nums + 4]
-                                         + a_s * v[2: x_nums + 2, 1: y_nums + 1] + a_ss * v[2: x_nums + 2, : y_nums]
-                                         - v_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
+        # 数值传热学214页，6.5.1.5小节，速度与压力修正值的亚松弛
+        u[2: x_nums + 2, 2: y_nums + 2] = (uv_alpha * (a_e * u[3: x_nums + 3, 2: y_nums + 2] + a_ee * u[4: x_nums + 4, 2: y_nums + 2]
+                                                      + a_w * u[1: x_nums + 1, 2: y_nums + 2] + a_ww * u[: x_nums, 2: y_nums + 2]
+                                                      + a_n * u[2: x_nums + 2, 3: y_nums + 3] + a_nn * u[2: x_nums + 2, 4: y_nums + 4]
+                                                      + a_s * u[2: x_nums + 2, 1: y_nums + 1] + a_ss * u[2: x_nums + 2, : y_nums]
+                                                      + u_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
+                                           + (1 - uv_alpha) * u[2: x_nums + 2, 2: y_nums + 2])
+        v[2: x_nums + 2, 2: y_nums + 2] = (uv_alpha * (a_e * v[3: x_nums + 3, 2: y_nums + 2] + a_ee * v[4: x_nums + 4, 2: y_nums + 2]
+                                                      + a_w * v[1: x_nums + 1, 2: y_nums + 2] + a_ww * v[: x_nums, 2: y_nums + 2]
+                                                      + a_n * v[2: x_nums + 2, 3: y_nums + 3] + a_nn * v[2: x_nums + 2, 4: y_nums + 4]
+                                                      + a_s * v[2: x_nums + 2, 1: y_nums + 1] + a_ss * v[2: x_nums + 2, : y_nums]
+                                                      + v_source) / a_p[2: x_nums + 2, 2: y_nums + 2]
+                                           + (1 - uv_alpha) * v[2: x_nums + 2, 2: y_nums + 2])
 
-        u[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, u[2: x_nums + 2, 2: y_nums + 2], 0.0)
-        v[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, v[2: x_nums + 2, 2: y_nums + 2], 0.0)
+        u[2: x_nums + 2, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0), 0.0, u[2: x_nums + 2, 2: y_nums + 2])
+        v[2: x_nums + 2, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0), 0.0, v[2: x_nums + 2, 2: y_nums + 2])
 
         u_numpy = u.cpu().numpy()
         v_numpy = v.cpu().numpy()
-        u_error, v_error = torch.max(torch.abs(u_old - u) * 100 / inlet_velocity), torch.max(torch.abs(v_old - v) * 100 / inlet_velocity)
-        # print("epoch = " + str(epoch) + ", uError = " + str(u_error.cpu().numpy()) + ", vError = " + str(v_error.cpu().numpy()))
-        if u_error.cpu().numpy() < 1.0e-6 and v_error.cpu().numpy() < 1.0e-6:
+        u_error = torch.max(torch.abs(u_old - u) * 100 / inlet_velocity).cpu().numpy().item()
+        v_error = torch.max(torch.abs(v_old - v) * 100 / inlet_velocity).cpu().numpy().item()
+        # print("epoch = " + str(epoch) + ", uError = " + str(u_error) + ", vError = " + str(v_error))
+        if u_error < 1.0e-6 and v_error < 1.0e-6:
             break
+
+        u_error_error = abs(u_error_old - u_error) * 100 / max(u_error, 1.0e-30)
+        v_error_error = abs(v_error_old - v_error) * 100 / max(v_error, 1.0e-30)
+        if u_error_error < 1.0e-6 and v_error_error < 1.0e-6:
+            break
+        u_error_old, v_error_old = u_error, v_error
 
     u[2: x_nums + 2, -1], u[2: x_nums + 2, -2] = u[2: x_nums + 2, -3],u[2: x_nums + 2, -3]
     # u[0, :], u[1, :] = u[2, :], u[2, :]
@@ -136,84 +158,150 @@ def velocity_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, d
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
 
-    return u, v, a_p
-
-
-def pressure_solver(p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs):
-    u_e_numpy = u_e.cpu().numpy()
-    v_n_numpy = v_n.cpu().numpy()
     a_p_numpy = a_p.cpu().numpy()
-
-    a_pe = (delta_y ** 2) * (1.0 / a_p[3: x_nums + 3, 2: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 2]) / (2 * density * inlet_velocity ** 2)
-    a_pw = (delta_y ** 2) * (1.0 / a_p[1: x_nums + 1, 2: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 2]) / (2 * density * inlet_velocity ** 2)
-    a_pn = (delta_x ** 2) * (1.0 / a_p[2: x_nums + 2, 3: y_nums + 3] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 2]) / (2 * density * inlet_velocity ** 2)
-    a_ps = (delta_x ** 2) * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 1] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 2]) / (2 * density * inlet_velocity ** 2)
-    a_pp = a_pe + a_pw + a_pn + a_ps
-
-    a_p_numpy = a_p.cpu().numpy()
-    a_pe_numpy = a_pe.cpu().numpy()
-    a_pw_numpy = a_pw.cpu().numpy()
-    a_pn_numpy = a_pn.cpu().numpy()
-    a_ps_numpy = a_ps.cpu().numpy()
-    a_pp_numpy = a_pp.cpu().numpy()
-
-    for epoch in range(inner_epochs):
-        p_old = p_prime.clone()
-        p_prime[2: x_nums + 2, 2: y_nums + 2] \
-            = ((a_pe * p_prime[3: x_nums + 3, 2: y_nums + 2] + a_pw * p_prime[1: x_nums + 1, 2: y_nums + 2]
-                + a_pn * p_prime[2: x_nums + 2, 3: y_nums + 3] + a_ps * p_prime[2: x_nums + 2, 1: y_nums + 1]
-                + (u_e[: x_nums, :] - u_e[1: x_nums + 1, :]) * delta_y
-                + (v_n[:, : y_nums] - v_n[:, 1: y_nums + 1]) * delta_x) / a_pp)
-        p_prime[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30,
-                                                            p_prime[2: x_nums + 2, 2: y_nums + 2], 0.0)
-
-        error = (p_old[2: x_nums + 2, 2: y_nums + 2] - p_prime[2: x_nums + 2, 2: y_nums + 2]) * 100 / p_prime[2: x_nums + 2, 2: y_nums + 2]
-        p_error = torch.max(torch.abs(torch.where(torch.isnan(error), 0.0, error)))
-        # print("epoch = " + str(epoch) + ", pError = " + str(p_error.cpu().numpy()))
-        if p_error.cpu().numpy() < 1.0e-6:
-            break
-
-    p_prime_numpy = p_prime.cpu().numpy()
-
-    return p_prime
-
-
-def correct_params(u, v, u_e, v_n, p_prime, tau, a_p, x_nums, y_nums, delta_x, delta_y, alpha, density, inlet_velocity):
-    u[2: x_nums + 2, 2: y_nums + 2] += 0.5 * alpha * (p_prime[1: x_nums + 1, 2: y_nums + 2] - p_prime[3: x_nums + 3, 2: y_nums + 2]) * delta_y / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2])
-    v[2: x_nums + 2, 2: y_nums + 2] += 0.5 * alpha * (p_prime[2: x_nums + 2, 1: y_nums + 1] - p_prime[2: x_nums + 2, 3: y_nums + 3]) * delta_x / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2])
-
-    u[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, u[2: x_nums + 2, 2: y_nums + 2], 0.0)
-    v[2: x_nums + 2, 2: y_nums + 2] = torch.where(tau[2: x_nums + 2, 2: y_nums + 2] < 1.0e30, v[2: x_nums + 2, 2: y_nums + 2], 0.0)
-
-    u_e += (0.5 * alpha * (1.0 / a_p[1: x_nums + 2, 2: y_nums + 2] + 1.0 / a_p[2: x_nums + 3, 2: y_nums + 2])
-            * (p_prime[1: x_nums + 2, 2: y_nums + 2] - p_prime[2: x_nums + 3, 2: y_nums + 2]) * delta_y
-            / (density * inlet_velocity ** 2))
-    v_n += (0.5 * alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3])
-            * (p_prime[2: x_nums + 2, 1: y_nums + 2] - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta_x
-            / (density * inlet_velocity ** 2))
-
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
+    p_numpy = p.cpu().numpy()
+
+    # u_ep = (u[2: x_nums + 1, 2: y_nums + 2] + u[3: x_nums + 2, 2: y_nums + 2]) / 2.0
+    # u_ep_numpy = u_ep.cpu().numpy()
+    #
+    # p_ew = (p[3: x_nums + 2, 2: y_nums + 2] - p[1: x_nums, 2: y_nums + 2]) / (4.0 * a_p[2: x_nums + 1, 2: y_nums + 2])
+    # p_ew_numpy = p_ew.cpu().numpy()
+    #
+    # p_eep = (p[4: x_nums + 3, 2: y_nums + 2] - p[2: x_nums + 1, 2: y_nums + 2]) / (4.0 * a_p[3: x_nums + 2, 2: y_nums + 2])
+    # p_eep_numpy = p_eep.cpu().numpy()
+    #
+    # a_pe = 0.5 * (1.0 / a_p[2: x_nums + 1, 2: y_nums + 2] + 1.0 / a_p[3: x_nums + 2, 2: y_nums + 2]) * (p[2: x_nums + 1, 2: y_nums + 2] - p[3: x_nums + 2, 2: y_nums + 2])
+    # a_pe_numpy = a_pe.cpu().numpy()
+    #
+    # u_e_s = u_ep + uv_alpha * (p_ew + p_eep + a_pe) * delta_y / (density * inlet_velocity ** 2)
+    # u_e_s_numpy = u_e_s.cpu().numpy()
+
+    u_e[2: x_nums + 1, 2: y_nums + 2] = ((u[2: x_nums + 1, 2: y_nums + 2] + u[3: x_nums + 2, 2: y_nums + 2]) / 2.0
+                                         + uv_alpha * ((p[3: x_nums + 2, 2: y_nums + 2] - p[1: x_nums, 2: y_nums + 2])
+                                                       / (4.0 * a_p[2: x_nums + 1, 2: y_nums + 2])
+                                                       + (p[4: x_nums + 3, 2: y_nums + 2]
+                                                          - p[2: x_nums + 1, 2: y_nums + 2])
+                                                       / (4.0 * a_p[3: x_nums + 2, 2: y_nums + 2])
+                                                       + 0.5 * (1.0 / a_p[2: x_nums + 1, 2: y_nums + 2]
+                                                                + 1.0 / a_p[3: x_nums + 2, 2: y_nums + 2])
+                                                       * (p[2: x_nums + 1, 2: y_nums + 2]
+                                                          - p[3: x_nums + 2, 2: y_nums + 2])) * delta_y
+                                         / (density * inlet_velocity ** 2))
+
+    u_e[2: x_nums + 1, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 1, 2: y_nums + 2].eq(0)
+                                                    | flow_regions[3: y_nums + 2, 2: y_nums + 2].eq(0), 0.0,
+                                                    u_e[2: x_nums + 1, 2: y_nums + 2])
+    # u_e_numpy = u_e.cpu().numpy()
+
+    # v_np = (v[2: x_nums + 2, 1: y_nums + 2] + v[2: x_nums + 2, 2: y_nums + 3]) / 2.0
+    # v_np_numpy = v_np.cpu().numpy()
+    #
+    # p_ns = (p[2: x_nums + 2, 2: y_nums + 3] - p[2: x_nums + 2, 0: y_nums + 1]) / (4.0 * a_p[2: x_nums + 2, 1: y_nums + 2])
+    # p_ns_numpy = p_ns.cpu().numpy()
+    #
+    # p_nnp = (p[2: x_nums + 2, 3: y_nums + 4] - p[2: x_nums + 2, 1: y_nums + 2]) / (4.0 * a_p[2: x_nums + 2, 2: y_nums + 3])
+    # p_nnp_numpy = p_nnp.cpu().numpy()
+    #
+    # a_pn = 0.5 * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3]) * (p[2: x_nums + 2, 1: y_nums + 2] - p[2: x_nums + 2, 2: y_nums + 3])
+    # a_pn_numpy = a_pn.cpu().numpy()
+    #
+    # v_n_s = v_np + uv_alpha * (p_ns + p_nnp + a_pn) * delta_x / (density * inlet_velocity ** 2)
+    # v_n_s_numpy = v_n_s.cpu().numpy()
+
+    v_n[2: x_nums + 2, 1: y_nums + 2] = ((v[2: x_nums + 2, 1: y_nums + 2] + v[2: x_nums + 2, 2: y_nums + 3]) / 2.0
+                                         + uv_alpha * ((p[2: x_nums + 2, 2: y_nums + 3]
+                                                        - p[2: x_nums + 2, : y_nums + 1])
+                                                       / (4.0 * a_p[2: x_nums + 2, 1: y_nums + 2])
+                                                       + (p[2: x_nums + 2, 3: y_nums + 4]
+                                                          - p[2: x_nums + 2, 1: y_nums + 2])
+                                                       / (4.0 * a_p[2: x_nums + 2, 2: y_nums + 3])
+                                                       + 0.5 * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2]
+                                                                + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3])
+                                                       * (p[2: x_nums + 2, 1: y_nums + 2]
+                                                          - p[2: x_nums + 2, 2: y_nums + 3]))
+                                         * delta_x / (density * inlet_velocity ** 2))
+
+    v_n[2: x_nums + 2, 1: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 1: y_nums + 2].eq(0)
+                                                    | flow_regions[2: x_nums + 2, 2: y_nums + 3].eq(0), 0.0,
+                                                    v_n[2: x_nums + 2, 1: y_nums + 2])
+
+    u_e_numpy = u_e.cpu().numpy()
+    v_n_numpy = v_n.cpu().numpy()
+
+    if decoupled == "SIMPLE_C":
+        a_p[2: x_nums + 2, 2: y_nums + 2] = a_p[2: x_nums + 2, 2: y_nums + 2] / uv_alpha - (a_e + a_ee + a_w + a_ww + a_n + a_nn + a_s + a_ss)
+        a_p[2: x_nums + 2, -1], a_p[2: x_nums + 2, -2] = a_p[2: x_nums + 2, -3], a_p[2: x_nums + 2, -3]
+        a_p[2: x_nums + 2, 0], a_p[2: x_nums + 2, 1] = a_p[2: x_nums + 2, 2], a_p[2: x_nums + 2, 2]
+    else:
+        pass
+
+    a_p_numpy = a_p.cpu().numpy()
+
+    return u, v, u_e, v_n, a_p
+
+
+def correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, uv_alpha, density, inlet_velocity):
+    u[2: x_nums + 2, 2: y_nums + 2] += (0.5 * uv_alpha * (p_prime[1: x_nums + 1, 2: y_nums + 2]
+                                                          - p_prime[3: x_nums + 3, 2: y_nums + 2]) * delta_y
+                                        / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2]))
+    v[2: x_nums + 2, 2: y_nums + 2] += (0.5 * uv_alpha * (p_prime[2: x_nums + 2, 1: y_nums + 1]
+                                                          - p_prime[2: x_nums + 2, 3: y_nums + 3]) * delta_x
+                                        / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2]))
+
+    p_prime_numpy = p_prime.cpu().numpy()
+    a_p_numpy = a_p.cpu().numpy()
+    u_numpy = u.cpu().numpy()
+    v_numpy = v.cpu().numpy()
+
+    u[2: x_nums + 2, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0), 0.0,
+                                                  u[2: x_nums + 2, 2: y_nums + 2])
+    v[2: x_nums + 2, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0), 0.0,
+                                                  v[2: x_nums + 2, 2: y_nums + 2])
+
+    u_e[2: x_nums + 1, 2: y_nums + 2] += (0.5 * uv_alpha * (1.0 / a_p[2: x_nums + 1, 2: y_nums + 2]
+                                                            + 1.0 / a_p[3: x_nums + 2, 2: y_nums + 2])
+                                          * (p_prime[2: x_nums + 1, 2: y_nums + 2]
+                                             - p_prime[3: x_nums + 2, 2: y_nums + 2]) * delta_y
+                                          / (density * inlet_velocity ** 2))
+    v_n[2: x_nums + 2, 1: y_nums + 2] += (0.5 * uv_alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2]
+                                                            + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3])
+                                          * (p_prime[2: x_nums + 2, 1: y_nums + 2]
+                                             - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta_x
+                                          / (density * inlet_velocity ** 2))
+
+    u_e[2: x_nums + 1, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 1, 2: y_nums + 2].eq(0)
+                                                    | flow_regions[3: y_nums + 2, 2: y_nums + 2].eq(0), 0.0,
+                                                    u_e[2: x_nums + 1, 2: y_nums + 2])
+
+    v_n[2: x_nums + 2, 1: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 1: y_nums + 2].eq(0)
+                                                    | flow_regions[2: x_nums + 2, 2: y_nums + 3].eq(0), 0.0,
+                                                    v_n[2: x_nums + 2, 1: y_nums + 2])
+
     u_e_numpy = u_e.cpu().numpy()
     v_n_numpy = v_n.cpu().numpy()
 
     return u, v, u_e, v_n
 
 
-def fvm_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, outer_epochs, alpha):
+def fvm_solver(scheme, decoupled, u, v, p, p_prime, u_e, v_n, tau, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, outer_epochs, uv_alpha, p_alpha):
     u_error_old, v_error_old, p_error_old = 0.0, 0.0, 0.0
     for epoch in range(outer_epochs):
-        u_old, v_old, p_old = u.clone(), v.clone(), p_prime.clone()
-        u, v, a_p = velocity_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs)
+        u_old, v_old, p_old = u.clone(), v.clone(), p.clone()
+        u, v, u_e, v_n, a_p = velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha)
         u_numpy, v_numpy, a_p_numpy = u.cpu().numpy(), v.cpu().numpy(), a_p.cpu().numpy()
-
-        u_e, v_n = update_interface_velocities(u, v, p_prime, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity)
         u_e_numpy, v_n_numpy = u_e.cpu().numpy(), v_n.cpu().numpy()
 
-        p_prime = pressure_solver(p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs)
+        if decoupled == "SIMPLE":
+            p, p_prime = simple_solver(p, p_prime, u_e, v_n, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha, p_alpha)
+        elif decoupled == "SIMPLE_C":
+            p, p_prime, a_p = simple_c_solver(p, p_prime, u_e, v_n, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha, p_alpha)
+
+        p_numpy = p.cpu().numpy()
         p_prime_numpy = p_prime.cpu().numpy()
 
-        u, v, u_e, v_n = correct_params(u, v, u_e, v_n, p_prime, tau, a_p, x_nums, y_nums, delta_x, delta_y, alpha, density, inlet_velocity)
+        u, v, u_e, v_n = correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, uv_alpha, density, inlet_velocity)
         u_numpy, v_numpy = u.cpu().numpy(), v.cpu().numpy()
         u_e_numpy, v_n_numpy = u_e.cpu().numpy(), v_n.cpu().numpy()
 
@@ -221,18 +309,13 @@ def fvm_solver(scheme, u, v, p_prime, u_e, v_n, tau, a_p, x_nums, y_nums, delta_
         v_error = (torch.max(torch.abs(v_old - v) * 100 / inlet_velocity).cpu().numpy()).item()
         p_error = (torch.max(torch.abs(p_old - p_prime)).cpu().numpy()).item()
         print("epoch = " + str(epoch) + ", uError = " + str(u_error) + ", vError = " + str(v_error) + ", pError = " + str(p_error))
-        if u_error < 1.0e-6 and v_error < 1.0e-6 and p_error < 1.0e-6:
+        if u_error < 1.0e-3 and v_error < 1.0e-3:
             break
-
-        u_error_error = abs(u_error_old - u_error) * 100 / max(u_error, 1.0e-30)
-        v_error_error = abs(v_error_old - v_error) * 100 / max(v_error, 1.0e-30)
-        p_error_error = abs(p_error_old - p_error) * 100 / max(p_error, 1.0e-30)
-        if u_error_error < 1.0e-6 and v_error_error < 1.0e-6 and p_error_error < 1.0e-6:
-            break
-        u_error_old, v_error_old, v_error_old = u_error, v_error, p_error
 
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
+    p_numpy = p.cpu().numpy()
     p_prime_numpy = p_prime.cpu().numpy()
     tau_numpy = tau.cpu().numpy()
+
     return u, v, p_prime
