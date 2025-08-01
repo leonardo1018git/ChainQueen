@@ -1,7 +1,7 @@
 import torch
 
 
-def init_flow_params(x_nums, y_nums, density, viscosity, inlet_velocities, inlet_pressure, device):
+def init_flow_params(x_nums, y_nums, re_init, inlet_velocities, inlet_pressure, device):
     # 流动区域
     flow_regions = torch.tensor([
         [0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -19,12 +19,13 @@ def init_flow_params(x_nums, y_nums, density, viscosity, inlet_velocities, inlet
     v = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), inlet_velocities[1], 0.0)
     p = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), inlet_pressure, 0.0)
 
-    p_prime = torch.zeros_like(p, dtype=torch.float32, device=device)                    # 压力修正值
-    u_e = torch.zeros((x_nums + 3, y_nums + 4), dtype=torch.float32, device=device)                 # 右界面流速
-    v_n = torch.zeros((x_nums + 4, y_nums + 3), dtype=torch.float32, device=device)                 # 上界面流速
+    u0 = u.clone()
+    v0 = v.clone()
 
-    tau_init = viscosity / (density * (inlet_velocities[0] ** 2 + inlet_velocities[1] ** 2) ** 0.5)
-    tau = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), tau_init, 1.0e30)
+    p_prime = torch.zeros_like(p, dtype=torch.float32, device=device)                                   # 压力修正值
+    u_e = torch.zeros((x_nums + 3, y_nums + 4), dtype=torch.float32, device=device)                     # 右界面流速
+    v_n = torch.zeros((x_nums + 4, y_nums + 3), dtype=torch.float32, device=device)                     # 上界面流速
+    re = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), re_init, 1.0e-30) # 雷诺数
 
     a_p = torch.full((x_nums + 4, y_nums + 4), 1.0e-30, dtype=torch.float32, device=device)
 
@@ -32,8 +33,6 @@ def init_flow_params(x_nums, y_nums, density, viscosity, inlet_velocities, inlet
     v_numpy = v.cpu().numpy()
     p_prime_numpy = p_prime.cpu().numpy()
 
-    tau_numpy = tau.cpu()
-    #
-    # p_prime = torch.where((flow_regions == 1) | (flow_regions == 2) | (flow_regions == 4), 0.5, 0.0)
+    re_numpy = re.cpu()
 
-    return u, v, p, p_prime, u_e, v_n, tau, a_p, flow_regions
+    return u, v, p, u0, v0, p_prime, u_e, v_n, re, a_p, flow_regions

@@ -4,51 +4,50 @@ from source.scheme.sud_scheme import second_upwind_difference
 from source.scheme.cd_scheme import central_difference
 from source.scheme.fud_scheme import first_upwind_difference
 from source.scheme.hybrid_scheme import hybrid
-from source.decoupled.simple import simple_solver
-from source.decoupled.simplec import simple_c_solver
+from source.decoupled.simple_simplec import simple_solver
 
 
 # 传热与流体流动的数值计算228页，4.5小节稳态问题同位网格的SIMPLE算法
-def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha):
+def velocity_solver(scheme, decoupled, u, v, p, u0, v0, u_e, v_n, re, a_p, flow_regions, hydraulic_diameter, x_nums, y_nums, delta, delta_time, density, inlet_velocity, inner_epochs, uv_alpha):
     a_ww, a_w, a_e, a_ee, a_ss, a_s, a_n, a_nn = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-    y_division_x = delta_y / (2.0 * delta_x)
-    x_division_y = delta_x / (2.0 * delta_y)
 
-    # tau_numpy = tau.cpu().numpy()
-    # tau_e_numpy = (2 * tau[3: x_nums + 3, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[3: x_nums + 3, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
-    # tau_w_numpy = (2 * tau[1: x_nums + 1, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[1: x_nums + 1, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
-    # tau_n_numpy = (2 * tau[2: x_nums + 2, 3: y_nums + 3] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 3: y_nums + 3] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
-    # tau_s_numpy = (2 * tau[2: x_nums + 2, 1: y_nums + 1] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 1: y_nums + 1] + tau[2: x_nums + 2, 2: y_nums + 2])).cpu().numpy()
+    re_numpy = re.cpu().numpy()
+    u_e_numpy, v_n_numpy = u_e.cpu().numpy(), v_n.cpu().numpy()
 
-    d_e = (2 * tau[3: x_nums + 3, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[3: x_nums + 3, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])) * y_division_x
-    d_w = (2 * tau[1: x_nums + 1, 2: y_nums + 2] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[1: x_nums + 1, 2: y_nums + 2] + tau[2: x_nums + 2, 2: y_nums + 2])) * y_division_x
-    d_n = (2 * tau[2: x_nums + 2, 3: y_nums + 3] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 3: y_nums + 3] + tau[2: x_nums + 2, 2: y_nums + 2])) * x_division_y
-    d_s = (2 * tau[2: x_nums + 2, 1: y_nums + 1] * tau[2: x_nums + 2, 2: y_nums + 2] / (tau[2: x_nums + 2, 1: y_nums + 1] + tau[2: x_nums + 2, 2: y_nums + 2])) * x_division_y
+    d_e = 2.0 / (re[2 : x_nums + 2, 2: y_nums + 2] + re[3: x_nums + 3, 2: y_nums + 2])
+    d_w = 2.0 / (re[2 : x_nums + 2, 2: y_nums + 2] + re[1: x_nums + 1, 2: y_nums + 2])
+    d_n = 2.0 / (re[2 : x_nums + 2, 2: y_nums + 2] + re[2: x_nums + 2, 3: y_nums + 3])
+    d_s = 2.0 / (re[2 : x_nums + 2, 2: y_nums + 2] + re[2: x_nums + 2, 1: y_nums + 1])
 
     d_e_numpy = d_e.cpu().numpy()
     d_w_numpy = d_w.cpu().numpy()
     d_n_numpy = d_n.cpu().numpy()
     d_s_numpy = d_s.cpu().numpy()
 
-    # f_e = u_e[2: x_nums + 2, 2: y_nums + 2] * delta_y
-    # f_w = u_e[1: x_nums + 1, 2: y_nums + 2] * delta_y
-    # f_n = v_n[2: x_nums + 2, 2: y_nums + 2] * delta_x
-    # f_s = v_n[2: x_nums + 2, 1: y_nums + 1] * delta_x
+    # f_e = u_e[2: x_nums + 2, 2: y_nums + 2] * delta
+    # f_w = u_e[1: x_nums + 1, 2: y_nums + 2] * delta
+    # f_n = v_n[2: x_nums + 2, 2: y_nums + 2] * delta
+    # f_s = v_n[2: x_nums + 2, 1: y_nums + 1] * delta
+    #
+    # f_e_numpy = f_e.cpu().numpy()
+    # f_w_numpy = f_w.cpu().numpy()
+    # f_n_numpy = f_n.cpu().numpy()
+    # f_s_numpy = f_s.cpu().numpy()
 
     p_numpy = p.cpu().numpy()
 
-    u_source = (p[1: x_nums + 1, 2: y_nums + 2] - p[3: x_nums + 3, 2: y_nums + 2]) * delta_y / (2.0 * density * inlet_velocity ** 2)
-    v_source = (p[2: x_nums + 2, 1: y_nums + 1] - p[2: x_nums + 2, 3: y_nums + 3]) * delta_x / (2.0 * density * inlet_velocity ** 2)
+    u_source = (p[1: x_nums + 1, 2: y_nums + 2] - p[3: x_nums + 3, 2: y_nums + 2]) * delta / (2.0 * density * inlet_velocity ** 2) + u0[2: x_nums + 2, 2: y_nums + 2] * hydraulic_diameter * delta ** 2 / (inlet_velocity * delta_time)
+    v_source = (p[2: x_nums + 2, 1: y_nums + 1] - p[2: x_nums + 2, 3: y_nums + 3]) * delta / (2.0 * density * inlet_velocity ** 2) + v0[2: x_nums + 2, 2: y_nums + 2] * hydraulic_diameter * delta ** 2 / (inlet_velocity * delta_time)
 
     u_source_numpy = u_source.cpu().numpy()
     v_source_numpy = v_source.cpu().numpy()
 
-    # a_p_quick, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = quick(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
-    # a_p_sud, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = second_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
-    # a_p_cd, a_e, a_w, a_n, a_s = central_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
-    # a_p_fud, a_e, a_w, a_n, a_s = first_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
-    # a_p_hyb, a_e, a_w, a_n, a_s = hybrid(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
-    #
+    # a_p_quick, _, _, _, _, _, _, _, _ = quick(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
+    # a_p_sud, _, _, _, _, _, _, _, _ = second_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
+    # a_p_cd, _, _, _, _ = central_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
+    # a_p_fud, _, _, _, _ = first_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
+    # a_p_hyb, _, _, _, _ = hybrid(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
+
     # a_p_quick_numpy = a_p_quick.cpu().numpy()
     # a_p_sud_numpy = a_p_sud.cpu().numpy()
     # a_p_cd_numpy = a_p_cd.cpu().numpy()
@@ -57,19 +56,19 @@ def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions
 
     if scheme == "QUICK":
         # Quick格式
-        a_p, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = quick(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = quick(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
     elif scheme == "SUD":
         # 二阶迎风格式
-        a_p, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = second_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_ee, a_w, a_ww, a_n, a_nn, a_s, a_ss = second_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
     elif scheme == "CD":
         # 中心差分格式
-        a_p, a_e, a_w, a_n, a_s = central_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_w, a_n, a_s = central_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
     elif scheme == "FUD":
         # 一阶迎风格式
-        a_p, a_e, a_w, a_n, a_s = first_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_w, a_n, a_s = first_upwind_difference(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
     elif scheme == "Hybrid":
         # 混合格式
-        a_p, a_e, a_w, a_n, a_s = hybrid(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, x_nums, y_nums, delta_x, delta_y)
+        a_p, a_e, a_w, a_n, a_s = hybrid(a_p, flow_regions, u_e, v_n, d_e, d_w, d_n, d_s, hydraulic_diameter, x_nums, y_nums, delta, delta_time, inlet_velocity)
 
     a_p[2: x_nums + 2, -1], a_p[2: x_nums + 2, -2] = a_p[2: x_nums + 2, -3], a_p[2: x_nums + 2, -3]
     a_p[2: x_nums + 2, 0], a_p[2: x_nums + 2, 1] = a_p[2: x_nums + 2, 2], a_p[2: x_nums + 2, 2]
@@ -157,10 +156,6 @@ def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions
 
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
-
-    a_p_numpy = a_p.cpu().numpy()
-    u_numpy = u.cpu().numpy()
-    v_numpy = v.cpu().numpy()
     p_numpy = p.cpu().numpy()
 
     # u_ep = (u[2: x_nums + 1, 2: y_nums + 2] + u[3: x_nums + 2, 2: y_nums + 2]) / 2.0
@@ -175,7 +170,9 @@ def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions
     # a_pe = 0.5 * (1.0 / a_p[2: x_nums + 1, 2: y_nums + 2] + 1.0 / a_p[3: x_nums + 2, 2: y_nums + 2]) * (p[2: x_nums + 1, 2: y_nums + 2] - p[3: x_nums + 2, 2: y_nums + 2])
     # a_pe_numpy = a_pe.cpu().numpy()
     #
-    # u_e_s = u_ep + uv_alpha * (p_ew + p_eep + a_pe) * delta_y / (density * inlet_velocity ** 2)
+    # a = (p_ew + p_eep + a_pe) * delta / (density * inlet_velocity ** 2)
+    # a_numpy = a.cpu().numpy()
+    # u_e_s = u_ep + uv_alpha * (p_ew + p_eep + a_pe) * delta / (density * inlet_velocity ** 2)
     # u_e_s_numpy = u_e_s.cpu().numpy()
 
     u_e[2: x_nums + 1, 2: y_nums + 2] = ((u[2: x_nums + 1, 2: y_nums + 2] + u[3: x_nums + 2, 2: y_nums + 2]) / 2.0
@@ -187,13 +184,13 @@ def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions
                                                        + 0.5 * (1.0 / a_p[2: x_nums + 1, 2: y_nums + 2]
                                                                 + 1.0 / a_p[3: x_nums + 2, 2: y_nums + 2])
                                                        * (p[2: x_nums + 1, 2: y_nums + 2]
-                                                          - p[3: x_nums + 2, 2: y_nums + 2])) * delta_y
+                                                          - p[3: x_nums + 2, 2: y_nums + 2])) * delta
                                          / (density * inlet_velocity ** 2))
 
     u_e[2: x_nums + 1, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 1, 2: y_nums + 2].eq(0)
                                                     | flow_regions[3: y_nums + 2, 2: y_nums + 2].eq(0), 0.0,
                                                     u_e[2: x_nums + 1, 2: y_nums + 2])
-    # u_e_numpy = u_e.cpu().numpy()
+    u_e_numpy = u_e.cpu().numpy()
 
     # v_np = (v[2: x_nums + 2, 1: y_nums + 2] + v[2: x_nums + 2, 2: y_nums + 3]) / 2.0
     # v_np_numpy = v_np.cpu().numpy()
@@ -207,7 +204,10 @@ def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions
     # a_pn = 0.5 * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2] + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3]) * (p[2: x_nums + 2, 1: y_nums + 2] - p[2: x_nums + 2, 2: y_nums + 3])
     # a_pn_numpy = a_pn.cpu().numpy()
     #
-    # v_n_s = v_np + uv_alpha * (p_ns + p_nnp + a_pn) * delta_x / (density * inlet_velocity ** 2)
+    # a = uv_alpha * (p_ns + p_nnp + a_pn) * delta / (density * inlet_velocity ** 2)
+    # a_numpy = a.cpu().numpy()
+    #
+    # v_n_s = v_np + uv_alpha * (p_ns + p_nnp + a_pn) * delta / (density * inlet_velocity ** 2)
     # v_n_s_numpy = v_n_s.cpu().numpy()
 
     v_n[2: x_nums + 2, 1: y_nums + 2] = ((v[2: x_nums + 2, 1: y_nums + 2] + v[2: x_nums + 2, 2: y_nums + 3]) / 2.0
@@ -220,8 +220,8 @@ def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions
                                                        + 0.5 * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2]
                                                                 + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3])
                                                        * (p[2: x_nums + 2, 1: y_nums + 2]
-                                                          - p[2: x_nums + 2, 2: y_nums + 3]))
-                                         * delta_x / (density * inlet_velocity ** 2))
+                                                          - p[2: x_nums + 2, 2: y_nums + 3])) * delta
+                                         / (density * inlet_velocity ** 2))
 
     v_n[2: x_nums + 2, 1: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 1: y_nums + 2].eq(0)
                                                     | flow_regions[2: x_nums + 2, 2: y_nums + 3].eq(0), 0.0,
@@ -242,13 +242,16 @@ def velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions
     return u, v, u_e, v_n, a_p
 
 
-def correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, uv_alpha, density, inlet_velocity):
-    u[2: x_nums + 2, 2: y_nums + 2] += (0.5 * uv_alpha * (p_prime[1: x_nums + 1, 2: y_nums + 2]
-                                                          - p_prime[3: x_nums + 3, 2: y_nums + 2]) * delta_y
-                                        / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2]))
-    v[2: x_nums + 2, 2: y_nums + 2] += (0.5 * uv_alpha * (p_prime[2: x_nums + 2, 1: y_nums + 1]
-                                                          - p_prime[2: x_nums + 2, 3: y_nums + 3]) * delta_x
-                                        / (density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2]))
+def correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_nums, delta, uv_alpha, density, inlet_velocity):
+    u_numpy = u.cpu().numpy()
+    v_numpy = v.cpu().numpy()
+    a_p_numpy = a_p.cpu().numpy()
+    p_prime_numpy = p_prime.cpu().numpy()
+
+    u[2: x_nums + 2, 2: y_nums + 2] += (uv_alpha * (p_prime[1: x_nums + 1, 2: y_nums + 2] - p_prime[3: x_nums + 3, 2: y_nums + 2]) * delta
+                                        / (2.0 * density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2]))
+    v[2: x_nums + 2, 2: y_nums + 2] += (uv_alpha * (p_prime[2: x_nums + 2, 1: y_nums + 1] - p_prime[2: x_nums + 2, 3: y_nums + 3]) * delta
+                                        / (2.0 * density * inlet_velocity ** 2 * a_p[2: x_nums + 2, 2: y_nums + 2]))
 
     p_prime_numpy = p_prime.cpu().numpy()
     a_p_numpy = a_p.cpu().numpy()
@@ -260,16 +263,16 @@ def correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_num
     v[2: x_nums + 2, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 2, 2: y_nums + 2].eq(0), 0.0,
                                                   v[2: x_nums + 2, 2: y_nums + 2])
 
-    u_e[2: x_nums + 1, 2: y_nums + 2] += (0.5 * uv_alpha * (1.0 / a_p[2: x_nums + 1, 2: y_nums + 2]
-                                                            + 1.0 / a_p[3: x_nums + 2, 2: y_nums + 2])
+    u_e[2: x_nums + 1, 2: y_nums + 2] += (uv_alpha * (1.0 / a_p[2: x_nums + 1, 2: y_nums + 2]
+                                                      + 1.0 / a_p[3: x_nums + 2, 2: y_nums + 2])
                                           * (p_prime[2: x_nums + 1, 2: y_nums + 2]
-                                             - p_prime[3: x_nums + 2, 2: y_nums + 2]) * delta_y
-                                          / (density * inlet_velocity ** 2))
-    v_n[2: x_nums + 2, 1: y_nums + 2] += (0.5 * uv_alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2]
-                                                            + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3])
+                                             - p_prime[3: x_nums + 2, 2: y_nums + 2]) * delta
+                                          / (2.0 * density * inlet_velocity ** 2))
+    v_n[2: x_nums + 2, 1: y_nums + 2] += (uv_alpha * (1.0 / a_p[2: x_nums + 2, 1: y_nums + 2]
+                                                      + 1.0 / a_p[2: x_nums + 2, 2: y_nums + 3])
                                           * (p_prime[2: x_nums + 2, 1: y_nums + 2]
-                                             - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta_x
-                                          / (density * inlet_velocity ** 2))
+                                             - p_prime[2: x_nums + 2, 2: y_nums + 3]) * delta
+                                          / (2.0 * density * inlet_velocity ** 2))
 
     u_e[2: x_nums + 1, 2: y_nums + 2] = torch.where(flow_regions[2: x_nums + 1, 2: y_nums + 2].eq(0)
                                                     | flow_regions[3: y_nums + 2, 2: y_nums + 2].eq(0), 0.0,
@@ -285,23 +288,18 @@ def correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_num
     return u, v, u_e, v_n
 
 
-def fvm_solver(scheme, decoupled, u, v, p, p_prime, u_e, v_n, tau, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, outer_epochs, uv_alpha, p_alpha):
-    u_error_old, v_error_old, p_error_old = 0.0, 0.0, 0.0
+def fvm_solver(scheme, decoupled, u, v, p, u0, v0, p_prime, u_e, v_n, re, a_p, flow_regions, hydraulic_diameter, x_nums, y_nums, delta, delta_time, density, inlet_velocity, inner_epochs, outer_epochs, uv_alpha, p_alpha):
     for epoch in range(outer_epochs):
         u_old, v_old, p_old = u.clone(), v.clone(), p.clone()
-        u, v, u_e, v_n, a_p = velocity_solver(scheme, decoupled, u, v, p, u_e, v_n, tau, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha)
+        u, v, u_e, v_n, a_p = velocity_solver(scheme, decoupled, u, v, p, u0, v0, u_e, v_n, re, a_p, flow_regions, hydraulic_diameter, x_nums, y_nums, delta, delta_time, density, inlet_velocity, inner_epochs, uv_alpha)
         u_numpy, v_numpy, a_p_numpy = u.cpu().numpy(), v.cpu().numpy(), a_p.cpu().numpy()
         u_e_numpy, v_n_numpy = u_e.cpu().numpy(), v_n.cpu().numpy()
 
-        if decoupled == "SIMPLE":
-            p, p_prime = simple_solver(p, p_prime, u_e, v_n, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha, p_alpha)
-        elif decoupled == "SIMPLE_C":
-            p, p_prime, a_p = simple_c_solver(p, p_prime, u_e, v_n, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, density, inlet_velocity, inner_epochs, uv_alpha, p_alpha)
-
+        p, p_prime = simple_solver(p, p_prime, u_e, v_n, a_p, flow_regions, x_nums, y_nums, delta, density, inlet_velocity, inner_epochs, uv_alpha, p_alpha)
         p_numpy = p.cpu().numpy()
         p_prime_numpy = p_prime.cpu().numpy()
 
-        u, v, u_e, v_n = correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_nums, delta_x, delta_y, uv_alpha, density, inlet_velocity)
+        u, v, u_e, v_n = correct_velocities(u, v, u_e, v_n, p_prime, a_p, flow_regions, x_nums, y_nums, delta, uv_alpha, density, inlet_velocity)
         u_numpy, v_numpy = u.cpu().numpy(), v.cpu().numpy()
         u_e_numpy, v_n_numpy = u_e.cpu().numpy(), v_n.cpu().numpy()
 
@@ -309,13 +307,12 @@ def fvm_solver(scheme, decoupled, u, v, p, p_prime, u_e, v_n, tau, a_p, flow_reg
         v_error = (torch.max(torch.abs(v_old - v) * 100 / inlet_velocity).cpu().numpy()).item()
         p_error = (torch.max(torch.abs(p_old - p_prime)).cpu().numpy()).item()
         print("epoch = " + str(epoch) + ", uError = " + str(u_error) + ", vError = " + str(v_error) + ", pError = " + str(p_error))
-        if u_error < 1.0e-3 and v_error < 1.0e-3:
+        if u_error < 1.0e-6 and v_error < 1.0e-6:
             break
 
     u_numpy = u.cpu().numpy()
     v_numpy = v.cpu().numpy()
     p_numpy = p.cpu().numpy()
     p_prime_numpy = p_prime.cpu().numpy()
-    tau_numpy = tau.cpu().numpy()
 
-    return u, v, p_prime
+    return u, v, p
